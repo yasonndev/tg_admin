@@ -3,6 +3,9 @@
 namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
+use App\Manager\TelegramBotManager;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 /**
  * @info {!} нужно middleware которое будет узнавать бота
@@ -12,23 +15,67 @@ use App\Http\Controllers\Controller;
  */
 class TelegramBotsController extends Controller
 {
-    public function registerUserInBot()
+    public function __construct(
+        protected TelegramBotManager $botManager
+    ) {}
+
+    /**
+     * POST /telegram/register
+     */
+    public function registerUserInBot(Request $request): JsonResponse
     {
-        dump(__FUNCTION__);
+        // Передаем все данные из JSON тела (id, first_name, etc.)
+        $user = $this->botManager->handleUserRegistration($request->all());
+
+        return response()->json([
+            'status' => 'registered',
+            'data' => $user
+        ], 201);
     }
 
-    public function canUserAuthenticate()
+    /**
+     * POST /telegram/auth
+     */
+    public function canUserAuthenticate(Request $request): JsonResponse
     {
-        dump(__FUNCTION__);
+        // Извлекаем бота, которого Middleware нашел по API-KEY
+        $bot = $request->attributes->get('current_bot');
+
+        // Проверяем доступ пользователя (id берем из тела запроса)
+        $canAuth = $this->botManager->validateUserAuth($request->input('id'), $bot);
+
+        return response()->json([
+            'allowed' => $canAuth,
+            'bot_identity' => $bot->username
+        ]);
     }
 
-    public function userMadeAction()
+    /**
+     * POST /telegram/user/{userId}
+     */
+    public function getUserInBot(int $userId): JsonResponse
     {
-        dump(__FUNCTION__);
+        // $userId автоматически пробрасывается из {userId} в роуте
+        $user = $this->botManager->getUserData($userId);
+
+        if (!$user) {
+            return response()->json(['error' => 'User not found'], 404);
+        }
+
+        return response()->json($user);
     }
 
-    public function getUserByBot()
+    /**
+     * POST /telegram/user/action
+     */
+    public function userMadeAction(Request $request): JsonResponse
     {
-        dump(__FUNCTION__);
+        // Логика записи действия (через менеджер)
+        $this->botManager->logAction(
+            $request->input('id'),
+            $request->input('action_type', 'default')
+        );
+
+        return response()->json(['status' => 'action_recorded']);
     }
 }
